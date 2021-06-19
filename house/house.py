@@ -2,6 +2,8 @@ from pyspark.sql import SparkSession, Row
 from pyspark.sql.functions import col
 from pyspark.sql.types import FloatType
 from pyspark.ml.linalg import DenseVector
+from pyspark.ml.feature import StandardScaler
+from pyspark.ml.regression import LinearRegression
 
 # 初始化SparkSession
 spark = SparkSession.builder.master("local").appName("California Housing").config("spark.executor.memory",
@@ -64,4 +66,24 @@ df = df.select("medianHouseValue",
 input_data = df.rdd.map(lambda x: (x[0], DenseVector(x[1:])))
 df = spark.createDataFrame(input_data, ["label", "features"])
 
-df.show()
+# 数据标准化
+standScaler = StandardScaler(inputCol="features", outputCol="features_scaled")
+scaler = standScaler.fit(df)
+scaled_df = scaler.transform(df)
+
+# print(scaled_df.take(1))
+
+# 分割训练集和测试集
+train_data, test_data = scaled_df.randomSplit([.8, .2], seed=123)
+
+# 构建现行回归模型
+lr = LinearRegression(featuresCol='features_scaled', labelCol="label", maxIter=10, regParam=0.3, elasticNetParam=0.8)
+lineModel = lr.fit(train_data)
+
+# 模型评估
+predicted = lineModel.transform(test_data)
+predictions = predicted.select("prediction").rdd.map(lambda x: x[0])
+labels = predicted.select("label").rdd.map(lambda x: x[0])
+# 预测值和真实值机进行比较
+predictionAndLabel = predictions.zip(labels).collect()
+print(predictionAndLabel[:2])
